@@ -4,9 +4,9 @@
   "description": "Self-hosted RAG knowledge base builder (Express + LangChain.js)",
   "main": "src/server.js",
   "scripts": {
-    "prestart": "docker-compose up -d",
-    "dev": "nodemon src/server.js",
+    "prestart": "node scripts/start-docker.js",
     "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
     "worker": "node src/queue/worker.js"
   },
   "keywords": [],

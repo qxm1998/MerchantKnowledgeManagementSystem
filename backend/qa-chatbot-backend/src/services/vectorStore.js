@@ -18,23 +18,46 @@ class VectorStore {
         port: config.chroma.port
       });
 
-      // 只读取已存在的集合（只读模式，不创建、不修改、不删除）
+      // 获取或创建集合（如果不存在则自动创建）
       try {
-        this.collection = await this.client.getCollection({
-          name: config.chroma.collectionName
-        });
-        logger.info('已连接到 Chroma 向量数据库集合（只读模式）', { 
-          collection: config.chroma.collectionName 
-        });
-      } catch (error) {
-        // 集合不存在，抛出明确错误提示
-        const errorMsg = `向量数据库集合 "${config.chroma.collectionName}" 不存在。` +
-          `请先使用 kb-backend 构建知识库向量数据库，QA Chatbot 仅用于消费读取，不会创建新集合。`;
-        logger.error('Chroma 集合不存在', { 
+        // 尝试使用 getOrCreateCollection（推荐方法）
+        if (typeof this.client.getOrCreateCollection === 'function') {
+          this.collection = await this.client.getOrCreateCollection({
+            name: config.chroma.collectionName,
+            metadata: { description: 'Knowledge base documents' }
+          });
+          logger.info('已获取或创建 Chroma 集合', { 
+            collection: config.chroma.collectionName 
+          });
+        } else {
+          // 如果没有 getOrCreateCollection，尝试分别获取和创建
+          try {
+            this.collection = await this.client.getCollection({
+              name: config.chroma.collectionName
+            });
+            logger.info('已连接到现有 Chroma 集合', { 
+              collection: config.chroma.collectionName 
+            });
+          } catch (getError) {
+            // 集合不存在，创建新集合
+            logger.warn('Chroma 集合不存在，正在创建新集合', { 
+              collection: config.chroma.collectionName 
+            });
+            this.collection = await this.client.createCollection({
+              name: config.chroma.collectionName,
+              metadata: { description: 'Knowledge base documents' }
+            });
+            logger.info('已创建新的 Chroma 集合', { 
+              collection: config.chroma.collectionName 
+            });
+          }
+        }
+      } catch (collectionError) {
+        logger.error('Chroma 集合操作失败', { 
           collection: config.chroma.collectionName,
-          error: error.message 
+          error: collectionError.message 
         });
-        throw new Error(errorMsg);
+        throw collectionError;
       }
 
       this.initialized = true;
@@ -46,8 +69,8 @@ class VectorStore {
   }
 
   /**
-   * 向量相似度搜索（只读操作）
-   * 仅从已构建的向量数据库中检索，不进行任何写入操作
+   * 向量相似度搜索
+   * 从向量数据库中检索相似文档
    */
   async similaritySearch(queryEmbedding, topK = 5, filterFn = null) {
     if (!this.initialized) await this.init();
